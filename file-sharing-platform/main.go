@@ -1,14 +1,30 @@
 package main
 
 import (
-    "log"
-    "net/http"
-    "file-sharing-platform/handlers"
-    "file-sharing-platform/middleware"
-    "github.com/gorilla/mux"
+	// "database/sql"
+	"context"
+	"file-sharing-platform/config"
+	"file-sharing-platform/handlers"
+	"file-sharing-platform/middleware"
+	"file-sharing-platform/services"
+	"log"
+	"net/http"
+
+	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 )
 
 func main() {
+    // Connect to the database
+    db, err := config.ConnectDB()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close(context.Background())
+
+    // Start the file cleanup service
+    go services.CleanupExpiredFiles(db)
+    
     r := mux.NewRouter()
 
     // Routes

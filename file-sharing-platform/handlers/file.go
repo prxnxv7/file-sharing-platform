@@ -26,7 +26,7 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
     defer file.Close()
 
     // Upload file to S3 (or local)
-    fileURL, err := services.UploadToS3(file, fileHeader, userID)
+    fileURL, err := services.UploadFile(file, fileHeader, userID)
     if err != nil {
         http.Error(w, "Error uploading file", http.StatusInternalServerError)
         return

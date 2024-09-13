@@ -1,10 +1,12 @@
 package services
 
 import (
-    "context"
-    "github.com/go-redis/redis/v8"
-    "os"
-    "time"
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/go-redis/redis/v8"
 )
 
 var (
@@ -14,35 +16,47 @@ var (
 
 func init() {
     redisClient = redis.NewClient(&redis.Options{
-        Addr:     os.Getenv("REDIS_ADDR"),
-        Password: os.Getenv("REDIS_PASSWORD"),
+        Addr:     "redis:6379",
+        Password: "",
         DB:       0, // Default DB
     })
+
+    	// Test connection
+	_, err := redisClient.Ping(ctx).Result()
+	if err != nil {
+		log.Fatalf("Could not connect to Redis: %v", err)
+	} else {
+		fmt.Println("Connected to Redis successfully!")
+	}
 }
 
 func CacheFileMetadata(key string, data string, expiration time.Duration) error {
     err := redisClient.Set(ctx, key, data, expiration).Err()
     if err != nil {
-        return err
+        return fmt.Errorf("failed to cache file metadata: %v", err)
     }
+    fmt.Printf("File metadata for key %s cached successfully!\n", key)
     return nil
 }
 
 func GetCachedFileMetadata(key string) (string, error) {
     val, err := redisClient.Get(ctx, key).Result()
     if err == redis.Nil {
+        fmt.Printf("No cached data for key %s\n", key)
         return "", nil
     }
     if err != nil {
-        return "", err
+        return "", fmt.Errorf("failed to retrieve cached file metadata: %v", err)
     }
+    fmt.Printf("Cached file metadata for key %s retrieved successfully!\n", key)
     return val, nil
 }
 
 func InvalidateCache(key string) error {
     err := redisClient.Del(ctx, key).Err()
     if err != nil {
-        return err
+        return fmt.Errorf("failed to invalidate cache for key %s: %v", key, err)
     }
+    fmt.Printf("Cache for key %s invalidated successfully!\n", key)
     return nil
 }
