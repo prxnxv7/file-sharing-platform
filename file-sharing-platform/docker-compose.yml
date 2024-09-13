@@ -1,22 +1,22 @@
-version: '3'
+version: '3.8'
 
 services:
   db:
     image: postgres:13
     environment:
+      POSTGRES_DB: file_sharing_platform
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: file_sharing
+      POSTGRES_PASSWORD: pranav123
     ports:
       - "5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
 
   redis:
-    image: redis:6
+    image: redis:latest
     ports:
       - "6379:6379"
-  
+
   app:
     build: .
     ports:
@@ -26,17 +26,15 @@ services:
       - redis
     environment:
       DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: file_sharing_platform
       DB_USER: postgres
-      DB_PASSWORD: secret
-      DB_NAME: file_sharing
-      REDIS_HOST: redis
+      DB_PASSWORD: pranav123
+      REDIS_ADDR: redis:6379
+      AWS_REGION: your-aws-region
+      AWS_BUCKET: your-s3-bucket-name
     volumes:
       - .:/app
-    networks:
-      - backend-network
 
 volumes:
   db-data:
-
-networks:
-  backend-network:
