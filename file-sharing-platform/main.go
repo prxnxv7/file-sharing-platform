@@ -37,7 +37,8 @@ func main() {
     // Apply authentication middleware to protected routes
     protected := r.PathPrefix("/").Subrouter()
     protected.Use(middleware.AuthMiddleware)
-    protected.HandleFunc("/files/{id:[0-9]+}", handlers.GetFile).Methods("GET")
+    protected.HandleFunc("/file/{id:[0-9]+}", handlers.GetFile).Methods("GET")
+    protected.HandleFunc("/search}", handlers.SearchFiles).Methods("GET")
     protected.HandleFunc("/upload/{user_id:[0-9]+}", handlers.UploadFile).Methods("POST")
 
     log.Fatal(http.ListenAndServe(":8080", r))

@@ -1,16 +1,18 @@
 package handlers
 
 import (
-    "context"
-    "database/sql"
-    "encoding/json"
-    "net/http"
-    "file-sharing-platform/config"
-    "file-sharing-platform/services"
-    "github.com/gorilla/mux"
-    "strconv"
+	"context"
+	"database/sql"
+	"file-sharing-platform/config"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"github.com/gorilla/mux"
 )
 
+// UploadFile handles file uploads and saves metadata
 func UploadFile(w http.ResponseWriter, r *http.Request) {
     userID, err := strconv.Atoi(mux.Vars(r)["user_id"])
     if err != nil {
@@ -25,32 +27,62 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
     }
     defer file.Close()
 
-    // Upload file to S3 (or local)
-    fileURL, err := services.UploadFile(file, fileHeader, userID)
-    if err != nil {
-        http.Error(w, "Error uploading file", http.StatusInternalServerError)
-        return
-    }
+    // Create a channel to receive the result of file processing
+    resultChan := make(chan error)
 
-    // Connect to the database
-    db, err := config.ConnectDB()
-    if err != nil {
-        http.Error(w, "Error connecting to database", http.StatusInternalServerError)
-        return
-    }
-    defer db.Close(context.Background())
+    // Start a goroutine for processing the file upload
+    go func() {
+        // Define the local storage path
+        localDir := "./uploads" // Adjust this path as needed
+        if err := os.MkdirAll(localDir, os.ModePerm); err != nil {
+            resultChan <- err
+            return
+        }
 
-    query := `INSERT INTO files (user_id, file_name, file_size, s3_url) VALUES ($1, $2, $3, $4)`
-    _, err = db.Exec(context.Background(), query, userID, fileHeader.Filename, fileHeader.Size, fileURL)
-    if err != nil {
-        http.Error(w, "Error saving file metadata", http.StatusInternalServerError)
-        return
-    }
+        // Save the file to local storage
+        localPath := filepath.Join(localDir, fileHeader.Filename)
+        outFile, err := os.Create(localPath)
+        if err != nil {
+            resultChan <- err
+            return
+        }
+        defer outFile.Close()
 
+        _, err = io.Copy(outFile, file)
+        if err != nil {
+            resultChan <- err
+            return
+        }
+
+        // Connect to the database
+        db, err := config.ConnectDB()
+        if err != nil {
+            resultChan <- err
+            return
+        }
+        defer db.Close(context.Background())
+
+        query := `INSERT INTO files (user_id, file_name, file_size, local_path) VALUES ($1, $2, $3, $4)`
+        _, err = db.Exec(context.Background(), query, userID, fileHeader.Filename, fileHeader.Size, localPath)
+        if err != nil {
+            resultChan <- err
+            return
+        }
+
+        resultChan <- nil
+    }()
+
+    // Respond to the client while file processing happens in the background
     w.WriteHeader(http.StatusOK)
-    w.Write([]byte("File uploaded successfully: " + fileURL))
+    w.Write([]byte("File upload started"))
+
+    // Handle any errors from the goroutine
+    if err := <-resultChan; err != nil {
+        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+    }
 }
 
+// GetFile handles file retrieval
 func GetFile(w http.ResponseWriter, r *http.Request) {
     fileID, err := strconv.Atoi(mux.Vars(r)["file_id"])
     if err != nil {
@@ -65,13 +97,13 @@ func GetFile(w http.ResponseWriter, r *http.Request) {
     }
     defer db.Close(context.Background())
 
-    query := `SELECT file_name, file_size, s3_url FROM files WHERE id = $1`
+    query := `SELECT file_name, file_size, local_path FROM files WHERE id = $1`
     row := db.QueryRow(context.Background(), query, fileID)
 
     var fileName string
     var fileSize int64
-    var s3URL string
-    err = row.Scan(&fileName, &fileSize, &s3URL)
+    var localPath string
+    err = row.Scan(&fileName, &fileSize, &localPath)
     if err != nil {
         if err == sql.ErrNoRows {
             http.Error(w, "File not found", http.StatusNotFound)
@@ -81,11 +113,11 @@ func GetFile(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    response := map[string]interface{}{
-        "file_name": fileName,
-        "file_size": fileSize,
-        "s3_url":    s3URL,
+    filePath := filepath.Join("uploads", localPath)
+    if _, err := os.Stat(filePath); os.IsNotExist(err) {
+        http.Error(w, "File does not exist", http.StatusNotFound)
+        return
     }
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+
+    http.ServeFile(w, r, filePath)
 }

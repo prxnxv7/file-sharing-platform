@@ -12,7 +12,7 @@ import (
 
 func TestLoginUser(t *testing.T) {
     reqBody := map[string]string{
-        "email":    "test@example.com",
+        "email":    "user@example.com",
         "password": "password123",
     }
     body, _ := json.Marshal(reqBody)

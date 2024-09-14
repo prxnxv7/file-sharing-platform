@@ -126,19 +126,28 @@ var (
 
 // UploadFile handles uploading a file to local storage and returns the file path
 func UploadFile(file multipart.File, fileHeader *multipart.FileHeader, userID int) (string, error) {
-    filePath := filepath.Join(UploadDir, fmt.Sprintf("user-%d-%s", userID, fileHeader.Filename))
+	// Ensure the directory exists
+	err := os.MkdirAll(UploadDir, os.ModePerm)
+	if err != nil {
+		return "", fmt.Errorf("failed to create upload directory: %v", err)
+	}
 
-    outFile, err := os.Create(filePath)
-    if err != nil {
-        return "", err
-    }
-    defer outFile.Close()
+	// Create the file path with user ID and file name
+	filePath := filepath.Join(UploadDir, fmt.Sprintf("user-%d-%s", userID, fileHeader.Filename))
 
-    if _, err := io.Copy(outFile, file); err != nil {
-        return "", err
-    }
+	// Create the file on the local system
+	outFile, err := os.Create(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create file: %v", err)
+	}
+	defer outFile.Close()
 
-    return filePath, nil
+	// Copy the file content to the created file
+	if _, err := io.Copy(outFile, file); err != nil {
+		return "", fmt.Errorf("failed to save file: %v", err)
+	}
+
+	return filePath, nil
 }
 
 // CleanupExpiredFiles periodically checks and deletes expired files

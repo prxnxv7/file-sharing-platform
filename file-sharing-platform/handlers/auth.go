@@ -13,7 +13,11 @@ import (
 
 func RegisterUser(w http.ResponseWriter, r *http.Request) {
     var user models.User
-    json.NewDecoder(r.Body).Decode(&user)
+    // Decode the JSON body
+    if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+        http.Error(w, "Invalid request body", http.StatusBadRequest)
+        return
+    }
 
     // Hash password
     hashedPassword, _ := utils.HashPassword(user.Password)
