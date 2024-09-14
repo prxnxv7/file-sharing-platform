@@ -1,10 +1,21 @@
 package middleware
 
 import (
-    "context"
-    "net/http"
-    "strings"
-    "file-sharing-platform/utils"
+	"context"
+	"file-sharing-platform/services"
+	"file-sharing-platform/utils"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// Define a custom type for the context key to avoid collisions
+type contextKey string
+
+const (
+    userContextKey  contextKey = "user" 
+	requestLimit   = 100              // Number of allowed requests per window
+	windowDuration = time.Minute       // Time window for rate limiting
 )
 
 func AuthMiddleware(next http.Handler) http.Handler {
@@ -27,7 +38,35 @@ func AuthMiddleware(next http.Handler) http.Handler {
             return
         }
 
-        ctx := context.WithValue(r.Context(), "user", claims.Email)
+        ctx := context.WithValue(r.Context(), userContextKey, claims.Email)
         next.ServeHTTP(w, r.WithContext(ctx))
     })
+}
+
+// RateLimiterMiddleware limits the number of requests per user based on the user’s email in JWT claims
+func RateLimiterMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Retrieve user email from the context set by the AuthMiddleware
+		userEmail, ok := r.Context().Value("user").(string)
+		if !ok || userEmail == "" {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
+		// Apply rate limiting logic using Redis
+		allowed, err := services.RateLimit(userEmail, requestLimit, windowDuration)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		// If rate limit exceeded, return 429 Too Many Requests
+		if !allowed {
+			http.Error(w, "Rate limit exceeded, try again later", http.StatusTooManyRequests)
+			return
+		}
+
+		// Proceed to the next handler
+		next.ServeHTTP(w, r)
+	})
 }

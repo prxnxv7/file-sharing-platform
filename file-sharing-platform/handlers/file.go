@@ -3,12 +3,16 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"file-sharing-platform/config"
+	"file-sharing-platform/services"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
+
 	"github.com/gorilla/mux"
 )
 
@@ -69,7 +73,24 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
             return
         }
 
+        // Cache the file metadata in Redis
+        fileMetadata := map[string]interface{}{
+            "user_id":    userID,
+            "file_name":  fileHeader.Filename,
+            "file_size":  fileHeader.Size,
+            "local_path": localPath,
+        }
+        metadataJSON, _ := json.Marshal(fileMetadata)
+        cacheKey := "file_metadata:" + fileHeader.Filename
+        cacheErr := services.CacheFileMetadata(cacheKey, string(metadataJSON), 5*time.Minute)
+        if cacheErr != nil {
+            resultChan <- cacheErr
+            return
+        }
+
         resultChan <- nil
+        // Notify the WebSocket handler that the upload is complete
+        uploadCompleteChan <- true
     }()
 
     // Respond to the client while file processing happens in the background
@@ -79,6 +100,7 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
     // Handle any errors from the goroutine
     if err := <-resultChan; err != nil {
         http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+        uploadCompleteChan <- false // Notify WebSocket on error
     }
 }
 
@@ -87,6 +109,28 @@ func GetFile(w http.ResponseWriter, r *http.Request) {
     fileID, err := strconv.Atoi(mux.Vars(r)["file_id"])
     if err != nil {
         http.Error(w, "Invalid file ID", http.StatusBadRequest)
+        return
+    }
+
+    // Define Redis cache key
+    cacheKey := "file_metadata:" + strconv.Itoa(fileID)
+
+    // Try to get the metadata from Redis cache
+    cachedMetadata, cacheErr := services.GetCachedFileMetadata(cacheKey)
+    if cacheErr == nil && cachedMetadata != "" {
+        // Cache hit - use cached metadata
+        var metadata map[string]interface{}
+        json.Unmarshal([]byte(cachedMetadata), &metadata)
+        localPath := metadata["local_path"].(string)
+
+        filePath := filepath.Join("uploads", localPath)
+        if _, err := os.Stat(filePath); os.IsNotExist(err) {
+            http.Error(w, "File does not exist", http.StatusNotFound)
+            return
+        }
+
+        // Serve the file from local storage
+        http.ServeFile(w, r, filePath)
         return
     }
 
@@ -110,6 +154,19 @@ func GetFile(w http.ResponseWriter, r *http.Request) {
         } else {
             http.Error(w, "Error retrieving file", http.StatusInternalServerError)
         }
+        return
+    }
+
+    // Cache the retrieved metadata in Redis
+    fileMetadata := map[string]interface{}{
+        "file_name":  fileName,
+        "file_size":  fileSize,
+        "local_path": localPath,
+    }
+    metadataJSON, _ := json.Marshal(fileMetadata)
+    cacheErr = services.CacheFileMetadata(cacheKey, string(metadataJSON), 5*time.Minute)
+    if cacheErr != nil {
+        http.Error(w, "Error caching file metadata", http.StatusInternalServerError)
         return
     }
 

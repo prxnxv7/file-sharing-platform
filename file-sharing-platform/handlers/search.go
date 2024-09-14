@@ -1,10 +1,12 @@
 package handlers
 
 import (
-    "context"
-    "encoding/json"
-    "net/http"
-    "file-sharing-platform/config"
+	"context"
+	"encoding/json"
+	"file-sharing-platform/config"
+	"net/http"
+	"strconv"
+	"strings"
 )
 
 func SearchFiles(w http.ResponseWriter, r *http.Request) {
@@ -21,20 +23,25 @@ func SearchFiles(w http.ResponseWriter, r *http.Request) {
 
     query := `SELECT id, file_name, file_size, local_path FROM files WHERE 1=1`
     args := []interface{}{}
+    var conditions []string
 
     if fileName != "" {
-        query += ` AND file_name ILIKE '%' || $1 || '%'`
+        conditions = append(conditions, `file_name ILIKE '%' || $`+strconv.Itoa(len(args)+1)+` || '%'`)
         args = append(args, fileName)
     }
     if fileType != "" {
-        query += ` AND file_type = $2`
+        conditions = append(conditions, `file_type = $`+strconv.Itoa(len(args)+1))
         args = append(args, fileType)
     }
     if uploadDate != "" {
-        query += ` AND upload_date::DATE = $3`
+        conditions = append(conditions, `upload_date::DATE = $`+strconv.Itoa(len(args)+1))
         args = append(args, uploadDate)
     }
 
+    if len(conditions) > 0 {
+        query += " AND " + strings.Join(conditions, " AND ")
+    }
+    
     rows, err := db.Query(context.Background(), query, args...)
     if err != nil {
         http.Error(w, "Error searching files", http.StatusInternalServerError)

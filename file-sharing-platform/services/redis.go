@@ -14,7 +14,7 @@ var (
     ctx = context.Background()
 )
 
-func init() {
+func InitRedis() {
     redisClient = redis.NewClient(&redis.Options{
         Addr:     "redis:6379",
         Password: "",
@@ -59,4 +59,26 @@ func InvalidateCache(key string) error {
     }
     fmt.Printf("Cache for key %s invalidated successfully!\n", key)
     return nil
+}
+
+// Rate limiting for API calls
+func RateLimit(userID string, limit int, window time.Duration) (bool, error) {
+	key := fmt.Sprintf("rate_limit:%s", userID)
+	count, err := redisClient.Get(ctx, key).Int()
+	if err == redis.Nil {
+		err = redisClient.Set(ctx, key, 1, window).Err()
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	} else if err != nil {
+		return false, err
+	}
+
+	if count >= limit {
+		return false, nil
+	}
+
+	redisClient.Incr(ctx, key)
+	return true, nil
 }
