@@ -8,22 +8,18 @@ import (
 	"os"
 )
 
-// EncryptFile encrypts the file before saving it locally
 func EncryptFile(filepath, key string) error {
-	// Open the file to be encrypted
 	file, err := os.Open(filepath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	// Create a new AES cipher using the key
 	block, err := aes.NewCipher([]byte(key))
 	if err != nil {
 		return err
 	}
 
-	// Create a new file to save the encrypted data
 	outFile, err := os.Create(filepath + ".enc")
 	if err != nil {
 		return err
@@ -45,22 +41,18 @@ func EncryptFile(filepath, key string) error {
 	return nil
 }
 
-// DecryptFile decrypts the file for reading
 func DecryptFile(filepath, key string) error {
-	// Open the encrypted file
 	file, err := os.Open(filepath + ".enc")
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	// Create a new AES cipher using the key
 	block, err := aes.NewCipher([]byte(key))
 	if err != nil {
 		return err
 	}
-
-	// Create a file to save the decrypted data
+	
 	outFile, err := os.Create(filepath + ".dec")
 	if err != nil {
 		return err

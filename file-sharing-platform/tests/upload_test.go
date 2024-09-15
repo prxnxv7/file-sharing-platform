@@ -3,7 +3,6 @@ package tests
 import (
 	"bytes"
 	"context"
-	// "io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +22,6 @@ func TestUploadFile(t *testing.T) {
     file.Write([]byte("This is a test file"))
     writer.Close()
 
-    // Mock a valid JWT
     token, err := utils.GenerateJWT("test@example.com")
     if err != nil {
         t.Fatalf("Error generating token: %v", err)
@@ -34,7 +32,6 @@ func TestUploadFile(t *testing.T) {
     req.Header.Set("Authorization", "Bearer " + token)
     w := httptest.NewRecorder()
     
-    // Mock context
     ctx := context.WithValue(req.Context(), userContextKey, "test@example.com")
 
     handlers.UploadFile(w, req.WithContext(ctx))

@@ -7,174 +7,176 @@ import (
 	"file-sharing-platform/config"
 	"file-sharing-platform/services"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gorilla/mux"
 )
 
-// UploadFile handles file uploads and saves metadata
 func UploadFile(w http.ResponseWriter, r *http.Request) {
+    log.Println("Starting UploadFile handler") 
+
     userID, err := strconv.Atoi(mux.Vars(r)["user_id"])
     if err != nil {
+        log.Printf("Invalid user ID: %v\n", err)
         http.Error(w, "Invalid user ID", http.StatusBadRequest)
         return
     }
 
+    log.Printf("Processing upload for user ID: %d\n", userID)
+
     file, fileHeader, err := r.FormFile("file")
     if err != nil {
+        log.Printf("Error reading file: %v\n", err)
         http.Error(w, "Error reading file", http.StatusBadRequest)
         return
     }
     defer file.Close()
 
-    // Create a channel to receive the result of file processing
+    log.Printf("Received file: %s\n", fileHeader.Filename) 
+
     resultChan := make(chan error)
 
-    // Start a goroutine for processing the file upload
-    go func() {
-        // Define the local storage path
-        localDir := "./uploads" // Adjust this path as needed
-        if err := os.MkdirAll(localDir, os.ModePerm); err != nil {
-            resultChan <- err
-            return
-        }
+	go func() {
+        log.Println("Starting file processing goroutine") 
+		s3Client := services.S3Client
 
-        // Save the file to local storage
-        localPath := filepath.Join(localDir, fileHeader.Filename)
-        outFile, err := os.Create(localPath)
-        if err != nil {
-            resultChan <- err
-            return
-        }
-        defer outFile.Close()
+		bucketName := "your-bucket-name"
+		s3Key := "uploads/" + fileHeader.Filename
 
-        _, err = io.Copy(outFile, file)
-        if err != nil {
-            resultChan <- err
-            return
-        }
+        log.Printf("Uploading file to S3: %s\n", s3Key)
+        _, err = s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+            Bucket: aws.String(bucketName),
+            Key:    aws.String(s3Key),
+            Body:   file,
+        })
+		if err != nil {
+			log.Printf("Error uploading file to S3: %v\n", err)
+			resultChan <- err
+			return
+		}
 
-        // Connect to the database
-        db, err := config.ConnectDB()
-        if err != nil {
-            resultChan <- err
-            return
-        }
-        defer db.Close(context.Background())
+        log.Println("File uploaded to S3 successfully")
 
-        query := `INSERT INTO files (user_id, file_name, file_size, local_path) VALUES ($1, $2, $3, $4)`
-        _, err = db.Exec(context.Background(), query, userID, fileHeader.Filename, fileHeader.Size, localPath)
-        if err != nil {
-            resultChan <- err
-            return
-        }
+		db, err := config.ConnectDB()
+		if err != nil {
+			log.Printf("Error connecting to DB: %v\n", err) 
+			resultChan <- err
+			return
+		}
+		defer db.Close(context.Background())
 
-        // Cache the file metadata in Redis
-        fileMetadata := map[string]interface{}{
-            "user_id":    userID,
-            "file_name":  fileHeader.Filename,
-            "file_size":  fileHeader.Size,
-            "local_path": localPath,
-        }
-        metadataJSON, _ := json.Marshal(fileMetadata)
-        cacheKey := "file_metadata:" + fileHeader.Filename
-        cacheErr := services.CacheFileMetadata(cacheKey, string(metadataJSON), 5*time.Minute)
-        if cacheErr != nil {
-            resultChan <- cacheErr
-            return
-        }
+		query := `INSERT INTO files (user_id, file_name, file_size, s3_key) VALUES ($1, $2, $3, $4)`
+		_, err = db.Exec(context.Background(), query, userID, fileHeader.Filename, fileHeader.Size, s3Key)
+		if err != nil {
+			log.Printf("Error inserting file metadata into DB: %v\n", err) 
+			resultChan <- err
+			return
+		}
 
-        resultChan <- nil
-        // Notify the WebSocket handler that the upload is complete
-        uploadCompleteChan <- true
-    }()
+        log.Println("File metadata saved to DB") 
 
-    // Respond to the client while file processing happens in the background
+		fileMetadata := map[string]interface{}{
+			"user_id":   userID,
+			"file_name": fileHeader.Filename,
+			"file_size": fileHeader.Size,
+			"s3_key":    s3Key,
+		}
+		metadataJSON, _ := json.Marshal(fileMetadata)
+		cacheKey := "file_metadata:" + fileHeader.Filename
+		cacheErr := services.CacheFileMetadata(cacheKey, string(metadataJSON), 5*time.Minute)
+		if cacheErr != nil {
+			log.Printf("Error caching file metadata: %v\n", cacheErr)
+			resultChan <- cacheErr
+			return
+		}
+
+        log.Println("File metadata cached successfully") 
+
+		resultChan <- nil
+		uploadCompleteChan <- true
+	}()
+
+    log.Println("Responding to client: File upload started") 
     w.WriteHeader(http.StatusOK)
     w.Write([]byte("File upload started"))
 
-    // Handle any errors from the goroutine
     if err := <-resultChan; err != nil {
+        log.Printf("Error occurred in file upload process: %v\n", err)
         http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        uploadCompleteChan <- false // Notify WebSocket on error
+        uploadCompleteChan <- false
     }
 }
 
-// GetFile handles file retrieval
 func GetFile(w http.ResponseWriter, r *http.Request) {
-    fileID, err := strconv.Atoi(mux.Vars(r)["file_id"])
-    if err != nil {
-        http.Error(w, "Invalid file ID", http.StatusBadRequest)
-        return
-    }
+	fileID, err := strconv.Atoi(mux.Vars(r)["file_id"])
+	if err != nil {
+		http.Error(w, "Invalid file ID", http.StatusBadRequest)
+		return
+	}
 
-    // Define Redis cache key
-    cacheKey := "file_metadata:" + strconv.Itoa(fileID)
+	cacheKey := "file_metadata:" + strconv.Itoa(fileID)
+	cachedMetadata, cacheErr := services.GetCachedFileMetadata(cacheKey)
+	var s3Key string
+	if cacheErr == nil && cachedMetadata != "" {
+		var metadata map[string]interface{}
+		json.Unmarshal([]byte(cachedMetadata), &metadata)
+		s3Key = metadata["s3_key"].(string)
+	} else {
+		db, err := config.ConnectDB()
+		if err != nil {
+			http.Error(w, "Error connecting to database", http.StatusInternalServerError)
+			return
+		}
+		defer db.Close(context.Background())
 
-    // Try to get the metadata from Redis cache
-    cachedMetadata, cacheErr := services.GetCachedFileMetadata(cacheKey)
-    if cacheErr == nil && cachedMetadata != "" {
-        // Cache hit - use cached metadata
-        var metadata map[string]interface{}
-        json.Unmarshal([]byte(cachedMetadata), &metadata)
-        localPath := metadata["local_path"].(string)
+		query := `SELECT file_name, file_size, s3_key FROM files WHERE id = $1`
+		row := db.QueryRow(context.Background(), query, fileID)
 
-        filePath := filepath.Join("uploads", localPath)
-        if _, err := os.Stat(filePath); os.IsNotExist(err) {
-            http.Error(w, "File does not exist", http.StatusNotFound)
-            return
-        }
+		var fileName string
+		var fileSize int64
+		err = row.Scan(&fileName, &fileSize, &s3Key)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				http.Error(w, "File not found", http.StatusNotFound)
+			} else {
+				http.Error(w, "Error retrieving file", http.StatusInternalServerError)
+			}
+			return
+		}
 
-        // Serve the file from local storage
-        http.ServeFile(w, r, filePath)
-        return
-    }
+		fileMetadata := map[string]interface{}{
+			"file_name": fileName,
+			"file_size": fileSize,
+			"s3_key":    s3Key,
+		}
+		metadataJSON, _ := json.Marshal(fileMetadata)
+		cacheErr = services.CacheFileMetadata(cacheKey, string(metadataJSON), 5*time.Minute)
+		if cacheErr != nil {
+			http.Error(w, "Error caching file metadata", http.StatusInternalServerError)
+			return
+		}
+	}
 
-    db, err := config.ConnectDB()
-    if err != nil {
-        http.Error(w, "Error connecting to database", http.StatusInternalServerError)
-        return
-    }
-    defer db.Close(context.Background())
+	s3Client := services.S3Client
 
-    query := `SELECT file_name, file_size, local_path FROM files WHERE id = $1`
-    row := db.QueryRow(context.Background(), query, fileID)
+	output, err := s3Client.GetObject(context.TODO(),&s3.GetObjectInput{
+		Bucket: aws.String(os.Getenv("S3_BUCKET_NAME")),
+		Key:    aws.String(s3Key),
+	})
+	if err != nil {
+		http.Error(w, "File does not exist", http.StatusNotFound)
+		return
+	}
+	defer output.Body.Close()
 
-    var fileName string
-    var fileSize int64
-    var localPath string
-    err = row.Scan(&fileName, &fileSize, &localPath)
-    if err != nil {
-        if err == sql.ErrNoRows {
-            http.Error(w, "File not found", http.StatusNotFound)
-        } else {
-            http.Error(w, "Error retrieving file", http.StatusInternalServerError)
-        }
-        return
-    }
-
-    // Cache the retrieved metadata in Redis
-    fileMetadata := map[string]interface{}{
-        "file_name":  fileName,
-        "file_size":  fileSize,
-        "local_path": localPath,
-    }
-    metadataJSON, _ := json.Marshal(fileMetadata)
-    cacheErr = services.CacheFileMetadata(cacheKey, string(metadataJSON), 5*time.Minute)
-    if cacheErr != nil {
-        http.Error(w, "Error caching file metadata", http.StatusInternalServerError)
-        return
-    }
-
-    filePath := filepath.Join("uploads", localPath)
-    if _, err := os.Stat(filePath); os.IsNotExist(err) {
-        http.Error(w, "File does not exist", http.StatusNotFound)
-        return
-    }
-
-    http.ServeFile(w, r, filePath)
+	w.Header().Set("Content-Disposition", "attachment; filename="+filepath.Base(s3Key))
+	w.Header().Set("Content-Type", *output.ContentType)
+	io.Copy(w, output.Body)
 }

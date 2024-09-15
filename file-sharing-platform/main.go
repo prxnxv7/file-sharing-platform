@@ -22,6 +22,9 @@ func main() {
     }
     defer db.Close(context.Background())
 
+    // Initialize the S3 client
+	services.InitS3()
+
     // Start the file cleanup service
     go services.CleanupExpiredFiles(db)
 
@@ -48,7 +51,7 @@ func main() {
     protected.Use(middleware.AuthMiddleware)
     protected.Use(middleware.RateLimiterMiddleware)
     protected.HandleFunc("/file/{id:[0-9]+}", handlers.GetFile).Methods("GET")
-    protected.HandleFunc("/search}", handlers.SearchFiles).Methods("GET")
+    protected.HandleFunc("/search", handlers.SearchFiles).Methods("GET")
     protected.HandleFunc("/upload/{user_id:[0-9]+}", handlers.UploadFile).Methods("POST")
 
     log.Fatal(http.ListenAndServe(":8080", r))

@@ -14,9 +14,7 @@ var (
 	uploadCompleteChan = make(chan bool)
 )
 
-// WebSocket handler for notifications
 func NotifyUploadComplete(w http.ResponseWriter, r *http.Request) {
-	// Upgrade the HTTP connection to WebSocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		http.Error(w, "Failed to upgrade to WebSocket", http.StatusInternalServerError)
@@ -24,9 +22,8 @@ func NotifyUploadComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Send notification once file upload completes
 	for {
-		uploadComplete := <-uploadCompleteChan // Placeholder: channel for upload status
+		uploadComplete := <-uploadCompleteChan 
 
 		if err := conn.WriteMessage(websocket.TextMessage, []byte("Upload completed!")); err != nil {
 			return

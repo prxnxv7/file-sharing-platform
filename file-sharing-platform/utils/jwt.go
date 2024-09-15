@@ -12,7 +12,6 @@ type Claims struct {
     jwt.StandardClaims
 }
 
-// GenerateJWT creates a JWT token for the user
 func GenerateJWT(email string) (string, error) {
     expirationTime := time.Now().Add(24 * time.Hour)
     claims := &Claims{
@@ -25,8 +24,6 @@ func GenerateJWT(email string) (string, error) {
     token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
     return token.SignedString(jwtKey)
 }
-
-// ValidateJWT checks the validity of the JWT token
 func ValidateJWT(tokenStr string) (*Claims, error) {
     claims := &Claims{}
     token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {

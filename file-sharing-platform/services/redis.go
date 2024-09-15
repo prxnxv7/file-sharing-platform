@@ -18,10 +18,9 @@ func InitRedis() {
     redisClient = redis.NewClient(&redis.Options{
         Addr:     "redis:6379",
         Password: "",
-        DB:       0, // Default DB
+        DB:       0,
     })
 
-    	// Test connection
 	_, err := redisClient.Ping(ctx).Result()
 	if err != nil {
 		log.Fatalf("Could not connect to Redis: %v", err)
@@ -61,7 +60,6 @@ func InvalidateCache(key string) error {
     return nil
 }
 
-// Rate limiting for API calls
 func RateLimit(userID string, limit int, window time.Duration) (bool, error) {
 	key := fmt.Sprintf("rate_limit:%s", userID)
 	count, err := redisClient.Get(ctx, key).Int()

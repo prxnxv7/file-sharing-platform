@@ -14,7 +14,6 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// Hub maintains active WebSocket connections and broadcasts messages to clients.
 type Hub struct {
 	clients    map[*websocket.Conn]bool
 	broadcast  chan []byte
@@ -22,7 +21,6 @@ type Hub struct {
 	unregister chan *websocket.Conn
 }
 
-// NewHub initializes a new Hub instance.
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*websocket.Conn]bool),
@@ -32,7 +30,6 @@ func NewHub() *Hub {
 	}
 }
 
-// RunHub starts the WebSocket hub for handling connections and broadcasting messages.
 func (h *Hub) RunHub() {
 	for {
 		select {
@@ -58,7 +55,6 @@ func (h *Hub) RunHub() {
 	}
 }
 
-// ServeWs handles WebSocket requests from clients.
 func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -68,7 +64,6 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 
 	hub.register <- conn
 
-	// Handle connection closure.
 	defer func() {
 		hub.unregister <- conn
 	}()
