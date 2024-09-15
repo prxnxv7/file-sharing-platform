@@ -19,6 +19,18 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// UploadFile uploads a file to S3 and stores metadata in the database and cache
+// @Summary Upload a file
+// @Description Uploads a file to an S3 bucket and stores its metadata in a database and cache
+// @Tags files
+// @Accept multipart/form-data
+// @Produce json
+// @Param user_id path int true "User ID"
+// @Param file formData file true "File to upload"
+// @Success 200 {string} string "File upload started"
+// @Failure 400 {string} string "Invalid user ID or error reading file"
+// @Failure 500 {string} string "Internal server error"
+// @Router /upload/{user_id} [post]
 func UploadFile(w http.ResponseWriter, r *http.Request) {
     log.Println("Starting UploadFile handler") 
 
@@ -47,7 +59,7 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
         log.Println("Starting file processing goroutine") 
 		s3Client := services.S3Client
 
-		bucketName := "your-bucket-name"
+		bucketName := os.Getenv("S3_BUCKET_NAME")
 		s3Key := "uploads/" + fileHeader.Filename
 
         log.Printf("Uploading file to S3: %s\n", s3Key)
@@ -114,6 +126,17 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
     }
 }
 
+// GetFile retrieves a file from S3 based on file ID
+// @Summary Retrieve a file
+// @Description Retrieves a file from S3 based on its ID and serves it to the client
+// @Tags files
+// @Produce application/octet-stream
+// @Param file_id path int true "File ID"
+// @Success 200 {file} string "File content"
+// @Failure 400 {string} string "Invalid file ID"
+// @Failure 404 {string} string "File not found"
+// @Failure 500 {string} string "Internal server error"
+// @Router /files/{file_id} [get]
 func GetFile(w http.ResponseWriter, r *http.Request) {
 	fileID, err := strconv.Atoi(mux.Vars(r)["file_id"])
 	if err != nil {

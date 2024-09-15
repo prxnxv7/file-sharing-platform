@@ -9,44 +9,49 @@ import (
 	"file-sharing-platform/services"
 	"log"
 	"net/http"
-
-	"github.com/gorilla/mux"
+    httpSwagger "github.com/swaggo/http-swagger/v2"
+    // "github.com/swaggo/http-swagger"
+    "github.com/gorilla/mux"
 	_ "github.com/lib/pq"
+	_ "file-sharing-platform/docs"
+
 )
 
+// @title File Sharing Platform API
+// @version 1.0
+// @description This is a file sharing platform API documentation.
+// @host localhost:8080
+// @BasePath /
 func main() {
-    // Connect to the database
     db, err := config.ConnectDB()
     if err != nil {
         log.Fatal(err)
     }
     defer db.Close(context.Background())
 
-    // Initialize the S3 client
 	services.InitS3()
 
-    // Start the file cleanup service
     go services.CleanupExpiredFiles(db)
-
-    // Initialize the Redis client for rate-limiting and caching
 	go services.InitRedis()
 
-	// Initialize WebSocket hub and run it in a goroutine
 	hub := services.NewHub()
 	go hub.RunHub()
     
     r := mux.NewRouter()
 
-    // Routes
     r.HandleFunc("/register", handlers.RegisterUser).Methods("POST")
     r.HandleFunc("/login", handlers.LoginUser).Methods("POST")
 
-	// WebSocket route for file upload notifications
 	r.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		services.ServeWs(hub, w, r)
 	})
+    r.PathPrefix("/swagger/").Handler(httpSwagger.Handler(
+		httpSwagger.URL("http://localhost:8080/swagger/doc.json"),
+		httpSwagger.DeepLinking(true),
+		httpSwagger.DocExpansion("none"),
+		httpSwagger.DomID("swagger-ui"),
+	)).Methods(http.MethodGet)
 
-    // Apply authentication middleware to protected routes
     protected := r.PathPrefix("/").Subrouter()
     protected.Use(middleware.AuthMiddleware)
     protected.Use(middleware.RateLimiterMiddleware)

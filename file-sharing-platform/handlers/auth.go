@@ -9,7 +9,16 @@ import (
 	"log"
 	"net/http"
 )
-
+// @Summary Register a new user
+// @Description Registers a new user with email and password
+// @Tags user
+// @Accept json
+// @Produce json
+// @Param user body models.User true "User Registration"
+// @Success 201 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /register [post]
 func RegisterUser(w http.ResponseWriter, r *http.Request) {
     log.Printf("Received request: %s %s", r.Method, r.URL.Path)
 	var user models.User
@@ -47,6 +56,15 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "User created successfully"})
 }
 
+// @Summary Login a user
+// @Description Authenticates a user and returns a JWT token
+// @Tags user
+// @Accept json
+// @Produce json
+// @Param user body models.User true "User Login"
+// @Success 200 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Router /login [post]
 func LoginUser(w http.ResponseWriter, r *http.Request) {
 	var user models.User
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
