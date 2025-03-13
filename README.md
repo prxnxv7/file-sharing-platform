@@ -1,4 +1,3 @@
-# Pranav Jayaraj Trademarkia_backend_task
 # File Sharing Platform
 
 A file sharing platform built using Go, PostgreSQL, Redis, and AWS S3. This application allows users to upload, download, and manage files, with features such as rate limiting, caching, and periodic file cleanup.
