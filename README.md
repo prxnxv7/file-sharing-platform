@@ -22,9 +22,6 @@ A file sharing platform built using Go, PostgreSQL, Redis, and AWS S3. This appl
 - **Periodic Cleanup**: Expired files are periodically cleaned up from both the database and AWS S3.
 - **Swagger Documentation**: API documentation and testing are available via Swagger.
 - **JWT Authentication**: Authentication is featured by JSON Web Tokens.
-- **JWT Authentication**: Authentication is featured by JSON Web Tokens.
-- **JWT Authentication**: Authentication is featured by JSON Web Tokens.
-
 
 ### Prerequisites
 
